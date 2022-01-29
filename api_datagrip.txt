@@ -1,0 +1,223 @@
+--- API traders per pair (mm)
+--- option 1
+select count(distinct order_inf.trader) filter (where order_inf.status != 'CANCELLED'
+                                                and order_inf.status != 'REJECTED'
+                                                and trade.maker_trader = trade.taker_trader
+                                                ) as traders,
+       date_trunc('day', order_inf.__create_datetime) as day,
+       quote.tag,
+       base.tag
+from view_market_aggregator_order order_inf
+join view_asset_manager_currency as quote
+    on order_inf.quote = quote.id
+join view_asset_manager_currency as base
+    on order_inf.currency = base.id
+join view_market_aggregator_trade as trade
+    on order_inf.trader = trade.maker_trader -- maker = taker
+where order_inf.client not in ('web', 'mobile', 'terminal')
+and order_inf.__create_datetime >= '2021-04-22'
+group by day, quote.tag, base.tag
+order by day;
+
+--- option 2
+select order_inf.trader as trader,
+       date_trunc('day', order_inf.__create_datetime) as day,
+       quote.tag,
+       base.tag
+from view_market_aggregator_order order_inf
+join view_asset_manager_currency as quote
+    on order_inf.quote = quote.id
+join view_asset_manager_currency as base
+    on order_inf.currency = base.id
+join view_market_aggregator_trade as trade
+    on order_inf.trader = trade.maker_trader -- maker = taker
+where order_inf.client not in ('web', 'mobile', 'terminal')
+and order_inf.status not in ('CANCELLED', 'REJECTED')
+and order_inf.__create_datetime >= '2021-05-06'
+and trade.maker_trader = trade.taker_trader
+group by order_inf.trader, day, quote.tag, base.tag
+order by day;
+
+--- option 3
+select trader
+into temp table api_traders
+from view_market_aggregator_order
+where __create_datetime >= '2021-04-01'
+and client not in ('web', 'mobile', 'terminal')
+and status not in ('CANCELLED', 'REJECTED')
+group by trader; -- 20s
+
+drop table api_traders;
+
+select count(distinct trade.maker_trader) as traders, -- taker = maker
+       date_trunc('day', trade.__create_datetime) as day,
+       quote.tag,
+       base.tag
+from view_market_aggregator_trade as trade
+join view_asset_manager_currency as quote
+    on trade.quote = quote.id
+join view_asset_manager_currency as base
+    on trade.currency = base.id
+where trade.maker_trader in
+    (   select trader
+        from view_market_aggregator_order
+        where __create_datetime >= '2021-04-01'
+        and client not in ('web', 'mobile', 'terminal')
+        and status not in ('CANCELLED', 'REJECTED')
+        group by trader
+    )
+and trade.maker_trader = trade.taker_trader
+and trade.__create_datetime >= '2021-04-23'
+and trade.__create_datetime < '2021-04-24'
+group by day, quote.tag, base.tag
+order by day;
+--1m 41s without count distinct
+--11s with count distinct
+--14 days - >> 10min => batch by days
+
+--- API traders per pair (retail)
+--- ???
+select count(trade.id) as traders, -- taker != maker
+       date_trunc('day', trade.__create_datetime) as day,
+       quote.tag,
+       base.tag    -- but when api user trades with api user
+                   -- we will cal one of them but have to calc both
+from view_market_aggregator_trade as trade
+join view_asset_manager_currency as quote
+    on trade.quote = quote.id
+join view_asset_manager_currency as base
+    on trade.currency = base.id
+where trade.maker_trader or trade.taker_trader in
+    (select * from api_traders)
+and trade.maker_trader != trade.taker_trader
+and trade.__create_datetime >= '2021-04-22'
+group by day, quote.tag, base.tag
+order by day;
+
+
+--- API volume per pair
+--- mm volume per pair
+select sum(trade.cost) as volume, -- taker = maker
+       date_trunc('day', trade.__create_datetime) as day,
+       quote.tag,
+       base.tag
+from view_market_aggregator_trade as trade
+join view_asset_manager_currency as quote
+    on trade.quote = quote.id
+join view_asset_manager_currency as base
+    on trade.currency = base.id
+where trade.maker_trader in
+    (select * from api_traders)
+and trade.maker_trader = trade.taker_trader
+and trade.__create_datetime >= '2021-04-22'
+and trade.__create_datetime < '2021-04-23'
+group by day, quote.tag, base.tag
+order by day; --- ~13s
+
+--- mm with zero fee accounts volume per pair
+select sum(trade.cost) as volume, -- taker = maker
+       date_trunc('day', trade.__create_datetime) as day,
+       quote.tag,
+       base.tag
+from view_market_aggregator_trade as trade
+join view_asset_manager_currency as quote
+    on trade.quote = quote.id
+join view_asset_manager_currency as base
+    on trade.currency = base.id
+where trade.maker_trader in
+    (select * from api_traders)
+and trade.maker_trader = trade.taker_trader
+and trade.taker_fee = 0
+and trade.__create_datetime >= '2021-04-22'
+--- and trade.__create_datetime < '2021-04-23'
+group by day, quote.tag, base.tag
+order by day; --- ~13s
+
+--- retail api volume per pair
+select sum(trade.cost) as volume, -- taker = maker
+       date_trunc('day', trade.__create_datetime) as day,
+       quote.tag,
+       base.tag
+from view_market_aggregator_trade as trade
+join view_asset_manager_currency as quote
+    on trade.quote = quote.id
+join view_asset_manager_currency as base
+    on trade.currency = base.id
+where trade.maker_trader in
+    (select * from api_traders)
+and trade.maker_trader != trade.taker_trader
+and trade.__create_datetime >= '2021-04-22'
+---and trade.__create_datetime < '2021-04-23'
+group by day, quote.tag, base.tag
+order by day; --- ~27s
+
+--- API fees per pair
+select sum(trade.maker_fee + trade.taker_fee) as fee,
+       date_trunc('day', trade.__create_datetime) as day,
+       quote.tag,
+       base.tag
+from view_market_aggregator_trade as trade
+join view_asset_manager_currency as quote
+    on trade.quote = quote.id
+join view_asset_manager_currency as base
+    on trade.currency = base.id
+where trade.maker_trader in
+    (select * from api_traders)
+and trade.__create_datetime >= '2021-04-22'
+and trade.__create_datetime < '2021-04-23'
+group by day, quote.tag, base.tag
+order by day; --- ~11s
+
+--- mm fees per pair
+select sum(trade.maker_fee + trade.taker_fee) as fee,
+       date_trunc('day', trade.__create_datetime) as day,
+       quote.tag,
+       base.tag
+from view_market_aggregator_trade as trade
+join view_asset_manager_currency as quote
+    on trade.quote = quote.id
+join view_asset_manager_currency as base
+    on trade.currency = base.id
+where trade.maker_trader in
+    (select * from api_traders)
+and trade.taker_trader = trade.maker_trader
+and trade.__create_datetime >= '2021-04-22'
+and trade.__create_datetime < '2021-04-23'
+group by day, quote.tag, base.tag
+order by day; --- ~13s
+
+-- retail => per pair and date total_fee - mm_fee
+
+-- API traders' cohort retention
+-- (API traders registered in a particular month on y-axis,
+-- how many from the registered cohort made a trade on each
+-- month since on x-axis) (filter for the daily, weekly and
+-- monthly traders - that is those who traded every day,
+-- every week, every month, other)
+--- ???
+--- extract those who've registered in April
+select order_inf.trader
+into temp table traders
+from view_market_aggregator_order order_inf
+join view_user_manager_user user_inf
+    on user_inf.id = order_inf.trader
+where user_inf.__create_date >= '2021-04-01'
+and user_inf.__create_date <= '2021-04-14'
+and order_inf.client not in ('web', 'mobile', 'terminal')
+and order_inf.status not in ('CANCELLED', 'REJECTED')
+group by order_inf.trader; --
+
+
+select *
+from view_market_aggregator_trade trade
+where trade.maker_trader in
+    (select * from traders)
+
+select trader,
+       count(order_info.id) as trades,
+       __create_date as date
+from view_market_aggregator_order order_info
+where order_info.client not in ('web', 'mobile', 'terminal')
+and __create_datetime >= '2021-04-01'
+group by trader, date
+order by date; --~3m
