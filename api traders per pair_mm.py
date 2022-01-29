@@ -56,7 +56,7 @@ def day_select(start_date, end_date, query, conn):
         
         next_date = start_date + timedelta(days=1) 
        
-        conn = psycopg2.connect("dbname='postgres' user='amedvedeva' host='135.181.61.116' password='JhnbgLrt@345nbvYukfbg^739cdsg'")
+        conn = psycopg2.connect("dbname='postgres' user='' host='' password=''")
 
         day_data = sqlio.read_sql_query(query, conn, params=(start_date, next_date))
         
