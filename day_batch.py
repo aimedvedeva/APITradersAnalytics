@@ -8,7 +8,6 @@ import datetime
 import time
 from func_timeout import func_timeout, FunctionTimedOut
 
-#conn = psycopg2.connect("dbname='postgres' user='amedvedeva' host='135.181.61.116' password='JhnbgLrt@345nbvYukfbg^739cdsg'")
 
 batch_qwr="""
 select trade.maker_trader as trader, -- taker = maker
@@ -96,7 +95,7 @@ def batch_select(query, batch_size, other_params):
     while True:
         batch_data = pd.DataFrame()
         
-        conn = psycopg2.connect("dbname='postgres' user='amedvedeva' host='135.181.61.116' password='JhnbgLrt@345nbvYukfbg^739cdsg'")
+        conn = psycopg2.connect("dbname='postgres' user='' host='' password=''")
         while(batch_data.empty):
             try:
                 batch_data = func_timeout(300, \
@@ -131,7 +130,7 @@ def day_select(start_date, end_date, day_query, day_qwr_with_tmp_tbl):
         
         next_date = start_date + timedelta(days=1) 
        
-        conn = psycopg2.connect("dbname='postgres' user='amedvedeva' host='135.181.61.116' password='JhnbgLrt@345nbvYukfbg^739cdsg'")
+        conn = psycopg2.connect("dbname='postgres' user='' host='' password=''")
         
         try:
             day_data = func_timeout(60, \
