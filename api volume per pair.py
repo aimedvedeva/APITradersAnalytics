@@ -7,7 +7,7 @@ from datetime import date, timedelta
 import datetime
 import time
 
-conn = psycopg2.connect("dbname='postgres' user='amedvedeva' host='135.181.61.116' password='JhnbgLrt@345nbvYukfbg^739cdsg'")
+conn = psycopg2.connect("dbname='postgres' user='' host='' password=''")
 
 qwr="""
 --- API volume per pair
